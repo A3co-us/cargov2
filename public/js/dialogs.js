@@ -87,7 +87,7 @@ export async function projectsDialog(callbacks) {
 
 /** Simple prompt for a project name + visibility. onCreate({name, visibility}). */
 export function newProjectDialog(onCreate) {
-  const name = el('input', { value: 'New Project' });
+  const name = el('input', { value: 'New Project', name: 'project-name', autocomplete: 'off' });
   const vis = el('select', {}, [
     el('option', { value: 'restricted', text: 'Restricted' }),
     el('option', { value: 'public', text: 'Public' }),
@@ -132,7 +132,7 @@ export async function manageProjectDialog(project, onSaved, onUpdated) {
   const assignable = users.filter((u) => u.id !== project.owner_id);
   const currentViewerIds = new Set((project.viewers || []).map((v) => v.id));
 
-  const name = el('input', { value: project.name });
+  const name = el('input', { value: project.name, name: 'project-name', autocomplete: 'off' });
 
   const vis = el('select', {}, [
     el('option', { value: 'restricted', ...(project.visibility === 'restricted' ? { selected: '' } : {}), text: 'Restricted' }),
@@ -237,8 +237,8 @@ export async function usersDialog() {
       );
     }
 
-    const nu = el('input', { placeholder: 'username' });
-    const np = el('input', { placeholder: 'password', type: 'password' });
+    const nu = el('input', { placeholder: 'username', name: 'new-username', autocomplete: 'username' });
+    const np = el('input', { placeholder: 'password', type: 'password', name: 'new-password', autocomplete: 'new-password' });
     const nr = el('select', {}, ['viewer', 'editor', 'admin'].map((r) =>
       el('option', { value: r, text: r })
     ));

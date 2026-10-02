@@ -121,6 +121,11 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 
 function enterApp() {
   loginOverlay.classList.add('hidden');
+  // Clear credentials and remove the login form from the DOM so password
+  // managers (e.g. 1Password) don't keep detecting a login form on the page.
+  document.getElementById('login-form')?.reset();
+  document.getElementById('login-password')?.setAttribute('value', '');
+  loginOverlay.remove();
   appEl.classList.remove('hidden');
 
   document.getElementById('user-badge').textContent = state.user.role;
@@ -603,7 +608,7 @@ function scenarioHandlers() {
     rename: (id) => {
       if (isViewer()) return;
       const s = state.project.scenarios.find((x) => x.id === id);
-      const input = el('input', { value: s.name });
+      const input = el('input', { value: s.name, name: 'scenario-name', autocomplete: 'off' });
       openModal((close) => el('div', {}, [
         el('label', {}, ['Name', input]),
         el('div', { class: 'modal-actions' }, [

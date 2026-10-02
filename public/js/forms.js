@@ -28,12 +28,12 @@ export function itemForm(existing, onSave) {
     )
   );
   const f = {
-    name: el('input', { value: item.name }),
-    length: el('input', { type: 'number', step: '0.5', value: item.length * 12 }),
-    width: el('input', { type: 'number', step: '0.5', value: item.width * 12 }),
-    height: el('input', { type: 'number', step: '0.5', value: item.height * 12 }),
-    weight: el('input', { type: 'number', step: '1', value: item.weight }),
-    qty: el('input', { type: 'number', step: '1', min: '0', value: item.qtyAvailable }),
+    name: el('input', { value: item.name, name: 'item-name', autocomplete: 'off' }),
+    length: el('input', { type: 'number', step: '0.5', name: 'item-length', autocomplete: 'off', value: item.length * 12 }),
+    width: el('input', { type: 'number', step: '0.5', name: 'item-width', autocomplete: 'off', value: item.width * 12 }),
+    height: el('input', { type: 'number', step: '0.5', name: 'item-height', autocomplete: 'off', value: item.height * 12 }),
+    weight: el('input', { type: 'number', step: '1', name: 'item-weight', autocomplete: 'off', value: item.weight }),
+    qty: el('input', { type: 'number', step: '1', min: '0', name: 'item-qty', autocomplete: 'off', value: item.qtyAvailable }),
   };
   const noTip = el('input', { type: 'checkbox', ...(item.noTip ? { checked: '' } : {}) });
   const savePreset = el('input', { type: 'checkbox' });
