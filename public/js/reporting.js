@@ -285,6 +285,10 @@ function printStyles() {
 
   .rp-note { font-size: 11.5px; color: var(--rp-muted); margin: 6px 0; }
 
+  /* A heading must never be stranded at the bottom of a page without its
+     content — keep it glued to the next block. */
+  .rp-section-title { break-after: avoid; }
+
   /* Footer */
   .rp-footer {
     position: fixed; bottom: 0; left: 0; right: 0;
@@ -298,6 +302,10 @@ function printStyles() {
     body { padding: 0 0 48px; }
     .rp-card, .rp-meta, .rp-table tr { break-inside: avoid; }
     thead { display: table-header-group; }
+    /* End page 1 after the rendered container view: everything that follows
+       (Category Breakdown, Weight Distribution, Cargo Items) starts on a fresh
+       page instead of being clipped at the bottom of page 1. */
+    .rp-break-after { break-after: page; }
   }`;
 }
 
@@ -401,8 +409,8 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
     ])}
     ${cards}
     ${viewImage ? `<h2 class="rp-section-title">Container View</h2>
-    ${viewsFigure({ [viewKey]: viewImage }, [viewKey])}
-    <p class="rp-note">View of the loaded container with item labels.</p>` : ''}
+    <div class="rp-break-after">${viewsFigure({ [viewKey]: viewImage }, [viewKey])}
+    <p class="rp-note">View of the loaded container with item labels.</p></div>` : ''}
     <h2 class="rp-section-title">Category Breakdown</h2>
     ${categoryChips}
     <h2 class="rp-section-title">Weight Distribution</h2>
