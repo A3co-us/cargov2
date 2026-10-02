@@ -21,6 +21,7 @@ import { itemForm, autoloadForm, loadPlanModal, manifestModal, compareModal, cat
 import { projectsDialog, newProjectDialog, usersDialog } from './dialogs.js';
 import { downloadPNG } from './reporting.js';
 import { exportProjectJSON, importProjectJSON } from './io.js';
+import { initDiagnostics, logsModal } from './logs.js';
 
 let sm = null; // SceneManager
 let interaction = null;
@@ -57,6 +58,11 @@ function initTheme() {
 }
 // Apply persisted theme before login so the whole app matches immediately.
 initTheme();
+
+// ---------- Diagnostics log ----------
+// Always-on capture of placement rejections, runtime errors and failed API
+// calls, viewable/copyable via the topbar "Logs" button.
+initDiagnostics();
 
 // ---------- Snap-to-grid (1", persisted) ----------
 const SNAP_KEY = 'a3_snap_grid';
@@ -940,6 +946,7 @@ function wireTopbar() {
     const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
     applyTheme(next);
   });
+  document.getElementById('btn-logs').addEventListener('click', () => logsModal());
   document.getElementById('btn-admin').addEventListener('click', () => usersDialog());
   document.getElementById('btn-compare').addEventListener('click', () => {
     compareModal(state.project, state.activeScenarioId, (id) => {

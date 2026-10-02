@@ -155,6 +155,12 @@ the database is empty and `ADMIN_PASSWORD` is not provided.
 ### Reporting & export
 - Real-time statistics, step-by-step load plan, printable manifest,
   PNG export, and local JSON import/export of projects.
+- **Diagnostics log** (topbar "Logs"): every rejected/illegal placement is
+  recorded with the exact rule and geometry that rejected it (support
+  heights, per-base verdicts, overhang % vs. the scenario allowance), plus
+  console errors, failed API calls and recent server errors. "Copy for
+  support" produces a pasteable text report; client logs are in-memory
+  per session, server logs via `GET /api/logs` (in-memory).
 
 ### Backend, auth & persistence
 - Express REST API, `better-sqlite3` (WAL) with auto-migrations + seeded admin.
@@ -169,6 +175,7 @@ the database is empty and `ADMIN_PASSWORD` is not provided.
 | GET | `/api/me` | current user |
 | GET/POST/PUT/DELETE | `/api/projects` | editor writes, viewer reads |
 | GET/POST/PUT/DELETE | `/api/users` | admin only |
+| GET | `/api/logs` | recent server-side API errors (any signed-in role; in-memory) |
 | GET | `/api/health` | health check |
 
 ## Keyboard shortcuts

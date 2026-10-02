@@ -443,6 +443,27 @@ kbd {
 .compare-table th { background: var(--panel-2); position: sticky; top: 0; }
 .compare-table td.best { background: color-mix(in srgb, var(--ok) 18%, transparent); font-weight: 600; }
 
+/* Diagnostics log modal (see js/logs.js) */
+.log-modal { display: flex; flex-direction: column; gap: var(--space-3); min-width: min(640px, 90vw); }
+.log-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.log-list {
+  max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel-2); padding: var(--space-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem; line-height: 1.5;
+}
+.log-entry {
+  padding: var(--space-2); border-radius: var(--radius-sm);
+  white-space: pre-wrap; word-break: break-word;
+}
+.log-entry + .log-entry { margin-top: var(--space-1); }
+.log-entry .log-title { font-weight: 600; }
+.log-entry.placement { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.log-entry.error, .log-entry.api, .log-entry.server { background: var(--danger-soft); }
+.log-entry.warn { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.log-entry.info { background: var(--panel-3); }
+.log-empty { color: var(--muted); padding: var(--space-4); text-align: center; }
+
 /* Toast */
 #toast-host { position: fixed; bottom: var(--space-4); right: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); z-index: 300; }
 .toast {

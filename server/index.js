@@ -11,6 +11,8 @@ import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import usersRoutes from './routes/users.routes.js';
 import projectsRoutes from './routes/projects.routes.js';
+import logsRoutes from './routes/logs.routes.js';
+import { recordServerError } from './logsBuffer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -68,10 +70,21 @@ app.use('/api/login', loginLimiter);
 app.use('/api', authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/projects', projectsRoutes);
+app.use('/api', logsRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found' }));
 
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status >= 400) {
+    recordServerError({
+      method: req.method,
+      path: req.originalUrl,
+      status,
+      message: status === 500 ? 'Internal server error' : err.message,
+      // Stack only for 500s, first frames only, to keep the report compact.
+      ...(status === 500 && err.stack ? { stack: String(err.stack).split('\n').slice(1, 4).join('\n    ') } : {}),
+    });
+  }
   if (status === 500) console.error('[api]', err);
   res.status(status).json({ error: status === 500 ? 'Internal server error' : err.message });
 });

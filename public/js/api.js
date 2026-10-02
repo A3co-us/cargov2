@@ -1,5 +1,6 @@
 // Thin fetch wrapper that injects the JWT and parses JSON errors.
 import { state } from './store.js';
+import { logError } from './logs.js';
 
 const TOKEN_KEY = 'a3_token';
 
@@ -15,11 +16,17 @@ async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   const token = state.token || loadToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: body != null ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers,
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    logError(`API ${method} ${path} → network error: ${e.message}`);
+    throw e;
+  }
   let data = null;
   try {
     data = await res.json();
@@ -28,6 +35,7 @@ async function request(method, path, body) {
   }
   if (!res.ok) {
     const msg = (data && data.error) || `Request failed (${res.status})`;
+    logError(`API ${method} ${path} → ${res.status}: ${msg}`);
     const err = new Error(msg);
     err.status = res.status;
     throw err;

@@ -11,8 +11,9 @@
 // (last-clicked) item.
 import * as THREE from 'three';
 import { activeScenario, catalogItem } from './store.js';
-import { collidesAny, canStack, overlapsXZ, isFullySupported, COLLISION_EPS, snapToGrid, layoutError, fitAtSpot, groupRestingDelta, DEFAULT_MAX_OVERHANG_PCT } from './cargo.js';
+import { collidesAny, canStack, overlapsXZ, isFullySupported, COLLISION_EPS, snapToGrid, layoutError, fitAtSpot, groupRestingDelta, DEFAULT_MAX_OVERHANG_PCT, explainPlacementError } from './cargo.js';
 import { toast } from './ui.js';
+import { logPlacementReject } from './logs.js';
 
 /**
  * Smallest vertical shift that makes a group pose physically clear (in bounds,
@@ -431,8 +432,50 @@ export class Interaction {
         }
         toast(msg, 'warn');
       }
+      // Diagnostics: whenever a release was blocked or landed illegally,
+      // record exactly WHY the placement was rejected (rule + geometry).
+      if (this.dragging.lenient || this.dragging.lastReject) {
+        this.logRejectExplanation('drag');
+      }
     }
     this.dragging = null;
+  }
+
+  /**
+   * Explain (for the diagnostics log) the rejection that just ended a drag:
+   * run explainPlacementError on the committed or snapped-back pose of the
+   * dragged members. Never allowed to throw into the pointer handler.
+   */
+  logRejectExplanation(phase) {
+    try {
+      const scn = activeScenario();
+      const spec = this.cb.getContainerSpec();
+      if (!scn || !spec || !this.dragging) return;
+      const allowance = scn.maxOverhangPct ?? DEFAULT_MAX_OVERHANG_PCT;
+      const members = this.dragging.members.map((m) => m.placement).slice(0, 3);
+      if (!members.length) return;
+      let logged = 0;
+      for (const p of members) {
+        const exp = explainPlacementError(p, scn.placements, spec, catalogItem, allowance);
+        if (exp) { logPlacementReject(exp, phase); logged += 1; }
+      }
+      if (!logged) {
+        // The committed pose itself passes every per-item rule: the rejection
+        // came from the fit search (e.g. no legal resting height existed at
+        // the pointer spot, or a carried stack could not settle).
+        const p = members[0];
+        const reason = this.dragging.lenient || this.dragging.lastReject || 'no legal resting spot';
+        logPlacementReject({
+          rule: 'fit-search',
+          message: reason,
+          detail: {
+            pose: { x: p.x, y: p.y, z: p.z },
+            dims: p.dims,
+            note: 'the committed pose passes the per-item rules — the drag was rejected by the resting-spot search (try nudging the item, or check the scenario overhang allowance)',
+          },
+        }, phase);
+      }
+    } catch { /* diagnostics must never break an interaction */ }
   }
 
   onDblClick(e) {

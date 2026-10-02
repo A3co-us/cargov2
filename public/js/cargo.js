@@ -540,10 +540,134 @@ export function removalError(placements, removedId, spec, lookup = () => null, m
   return after && after !== before ? after : null;
 }
 
+/** Human-readable reason canStack(top, base) rejects a pairing (or null). */
+export function stackRejectReason(top, base) {
+  if (!base) return null;
+  if (base.category === 'fragile') return 'fragile base — cargo may never be stacked on fragile items';
+  if (hazmatIncompatible(top?.hazmatClass, base?.hazmatClass)) {
+    return `hazmat segregation: class ${top?.hazmatClass} cannot be stacked on class ${base.hazmatClass}`;
+  }
+  return null;
+}
+
 /** Placements legally supporting `p` right now (the predicate layoutError uses). */
 export function legalSupports(p, placements) {
   return placements.filter((q) => q !== p && q.y + q.dims.h <= p.y + 1e-4 &&
     q.y + q.dims.h >= p.y - SUPPORT_TOL && overlapsXZ(p, q) && canStack(p, q));
+}
+
+/**
+ * DIAGNOSTIC sibling of layoutError() for a single placement `p` (or a
+ * candidate pose substituted into a layout): returns null when `p` passes
+ * every per-item rule layoutError enforces, otherwise a structured
+ * explanation `{ rule, message, detail }`. `detail` carries the exact
+ * geometry numbers — support heights, per-base verdicts, overhang fraction
+ * vs. the scenario allowance — so an "illegal placement" can be diagnosed
+ * from the diagnostics log instead of guessed at. Purely additive:
+ * layoutError() remains the gate the application actually uses.
+ */
+export function explainPlacementError(p, placements, spec, lookup = () => null, maxOverhangPct = 0) {
+  const others = placements.filter((q) => q !== p && q.id !== p.id);
+  const r = (n) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : n);
+  const d = p.dims;
+  const pose = () => ({ x: r(p.x), y: r(p.y), z: r(p.z) });
+  const dims = () => ({ l: r(d.l), w: r(d.w), h: r(d.h) });
+
+  if (!d || ![d.l, d.w, d.h].every((n) => Number.isFinite(n) && n > 0) ||
+      ![p.x, p.y, p.z, p.weight].every(Number.isFinite) || p.weight < 0) {
+    return { rule: 'invalid', message: 'Invalid cargo dimensions, position or weight',
+      detail: { pose: pose(), dims: dims(), weight: p.weight } };
+  }
+  if (p.x < -COLLISION_EPS || p.y < -COLLISION_EPS || p.z < -COLLISION_EPS ||
+      p.x + d.l > spec.length + COLLISION_EPS || p.y + d.h > spec.height + COLLISION_EPS ||
+      p.z + d.w > spec.width + COLLISION_EPS) {
+    return {
+      rule: 'bounds', message: `"${p.name}" is outside the container`,
+      detail: {
+        pose: pose(), dims: dims(),
+        container: { l: r(spec.length), w: r(spec.width), h: r(spec.height) },
+        note: `item spans x ${r(p.x)}–${r(p.x + d.l)} (limit ${r(spec.length)}), ` +
+          `z ${r(p.z)}–${r(p.z + d.w)} (limit ${r(spec.width)}), ` +
+          `top ${r(p.y + d.h)} (limit ${r(spec.height)})`,
+      },
+    };
+  }
+  const collider = others.find((q) => overlaps3D(p, q));
+  if (collider) {
+    return {
+      rule: 'collision', message: `"${p.name}" overlaps other cargo`,
+      detail: {
+        pose: pose(), dims: dims(),
+        with: { name: collider.name, x: r(collider.x), y: r(collider.y), z: r(collider.z),
+          dims: { l: r(collider.dims.l), w: r(collider.dims.w), h: r(collider.dims.h) } },
+      },
+    };
+  }
+  const item = lookup(p.catalogItemId) || p;
+  const hazPartner = others.find((q) => hazmatIncompatible(p.hazmatClass, q.hazmatClass));
+  if (hazPartner) {
+    return {
+      rule: 'hazmat', message: 'Incompatible hazardous cargo cannot share a container',
+      detail: { pose: pose(), partner: { name: hazPartner.name, hazmatClass: hazPartner.hazmatClass },
+        own: { name: p.name, hazmatClass: p.hazmatClass } },
+    };
+  }
+  if (!placementOrientations(d, { noTip: item.noTip }).some((o) => fitsOpening(o, spec))) {
+    const op = (getOpenings(spec)[0] || {});
+    return {
+      rule: 'door', message: `"${p.name}" cannot clear the door`,
+      detail: { dims: dims(), opening: { width: r(op.width), height: r(op.height) },
+        note: `no orientation of ${r(d.l)}×${r(d.w)}×${r(d.h)} fits the ${r(op.width)}×${r(op.height)} ft door opening` },
+    };
+  }
+  if (item.noTip && item.height != null && Math.abs(d.h - item.height) > COLLISION_EPS) {
+    return {
+      rule: 'noTip', message: `"${p.name}" must stay upright`,
+      detail: { dims: dims(), catalogHeight: r(item.height),
+        note: `item is marked do-not-tip but its height ${r(d.h)} differs from the catalog height ${r(item.height)}` },
+    };
+  }
+  if (p.y > COLLISION_EPS) {
+    const supports = legalSupports(p, placements);
+    if (!isFullySupported(p, supports, maxOverhangPct)) {
+      const area = d.l * d.w;
+      // Per-base verdict for every item whose footprint is under the candidate.
+      const bases = others.filter((q) => overlapsXZ(p, q)).map((q) => {
+        const top = q.y + q.dims.h;
+        const inter = Math.max(0, Math.min(p.x + d.l, q.x + q.dims.l) - Math.max(p.x, q.x)) *
+          Math.max(0, Math.min(p.z + d.w, q.z + q.dims.w) - Math.max(p.z, q.z));
+        let verdict;
+        if (top > p.y + Math.max(1e-4, COLLISION_EPS)) {
+          verdict = `top ${r(top)} is ABOVE the item bottom ${r(p.y)} (would collide)`;
+        } else {
+          const stackReason = stackRejectReason(p, q);
+          if (stackReason) verdict = stackReason;
+          else if (top >= p.y - SUPPORT_TOL) verdict = 'legal support';
+          else verdict = `top ${r(top)} is ${r(p.y - top)} ft below the item bottom ${r(p.y)} — beyond the ${SUPPORT_TOL} ft bridging tolerance`;
+        }
+        return { name: q.name, top: r(top), overlapPct: r((inter / area) * 100), verdict };
+      });
+      const rest = restingY(p.x, p.z, d, placements, spec, item, lookup, p.id, maxOverhangPct);
+      return {
+        rule: 'unsupported', message: `"${p.name}" would be unsupported`,
+        detail: {
+          pose: pose(), dims: dims(), itemBottom: r(p.y),
+          allowancePct: maxOverhangPct, overhangPct: r(overhangRatio(p, supports) * 100),
+          legalSupports: supports.map((q) => q.name),
+          restYLegal: rest == null ? null : r(rest),
+          bases,
+        },
+      };
+    }
+  }
+  const totalWeight = placements.reduce((s, q) => s + (q.weight || 0), 0);
+  if (totalWeight > spec.payloadLb) {
+    return {
+      rule: 'payload', message: 'Container payload limit exceeded',
+      detail: { totalWeight: r(totalWeight), payloadLb: spec.payloadLb },
+    };
+  }
+  return null;
 }
 
 /**
