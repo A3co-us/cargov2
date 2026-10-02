@@ -45,8 +45,10 @@ export function validateProjectData(data) {
       counts.set(p.catalogItemId, (counts.get(p.catalogItemId) || 0) + 1);
       requireValue(counts.get(p.catalogItemId) <= catalog.get(p.catalogItemId).qtyAvailable, 'Placed quantity exceeds available inventory');
     }
-    const error = layoutError(scenario.placements, getContainer(scenario.containerType), (id) => catalog.get(id), scenario.maxOverhangPct ?? DEFAULT_MAX_OVERHANG_PCT);
-    requireValue(!error, error);
+    // Layout-rule violations (unsupported cargo, overhang, hazmat mixing,
+    // payload, door clearance…) no longer reject a project: they are reported
+    // as warnings via collectLayoutWarnings so illegal staging can be saved,
+    // shared and re-opened. Structural checks above stay strict.
   }
   requireValue(data.staging === undefined || (Array.isArray(data.staging) && data.staging.length <= MAX_CATALOG_UNITS), 'Invalid staging array');
   for (const p of data.staging || []) {
@@ -56,4 +58,23 @@ export function validateProjectData(data) {
       Object.hasOwn(HAZMAT_CLASSES, p.hazmatClass), 'Invalid staged item or missing catalog reference');
   }
   return data;
+}
+
+/**
+ * Layout-rule warnings for every scenario of a project ("Container name:
+ * <first layout error>"), empty when every layout is legal. Structural
+ * problems still throw in validateProjectData; these are the advisory rule
+ * violations that no longer block saving/importing (illegal staging is
+ * allowed with warnings).
+ */
+export function collectLayoutWarnings(data) {
+  const catalog = new Map((data?.catalog || []).map((it) => [it.id, it]));
+  const out = [];
+  for (const scenario of data?.scenarios || []) {
+    if (!scenario || !Object.hasOwn(CONTAINER_TYPES, scenario.containerType)) continue;
+    const error = layoutError(scenario.placements || [], getContainer(scenario.containerType),
+      (id) => catalog.get(id), scenario.maxOverhangPct ?? DEFAULT_MAX_OVERHANG_PCT);
+    if (error) out.push(`${scenario.name}: ${error}`);
+  }
+  return out;
 }

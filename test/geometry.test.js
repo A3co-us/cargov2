@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import * as cargo from '../public/js/cargo.js';
 import { getContainer } from '../public/js/container.js';
-import { validateProjectData } from '../public/js/projectValidation.js';
+import { validateProjectData, collectLayoutWarnings } from '../public/js/projectValidation.js';
 import { newProject, makeScenario } from '../public/js/store.js';
 
 const box = (id, x = 0, y = 0, dims = { l: 2, w: 2, h: 2 }) => ({
@@ -48,7 +48,9 @@ test('overhang allowance permits slight overhang and reports the ratio', () => {
   p.scenarios[0].placements = [box('base', 0, 0), box('top', 0.1, 2)];
   assert.equal(validateProjectData(p), p);
   p.scenarios[0].maxOverhangPct = 0;
-  assert.throws(() => validateProjectData(p), /unsupported/);
+  // Layout-rule violations no longer reject the project — they are warnings.
+  assert.equal(validateProjectData(p), p);
+  assert.deepEqual(collectLayoutWarnings(p), [`${p.scenarios[0].name}: "top" would be unsupported`]);
 });
 test('removal is blocked only when it strands cargo, not by unrelated pre-existing issues', () => {
   const spec = getContainer('20STD');
@@ -102,13 +104,17 @@ test('group drag uses immutable start coordinates, not accumulated movement', ()
   control.moveGroup({ x: 1, z: 0 });
   assert.deepEqual(placements.map((p) => p.x), [1, 4]);
 });
-test('nudge cannot create floating cargo and rotation cannot exceed bounds', () => {
+test('nudge may create floating cargo (warned, allowed); oversized rotation still reverts', () => {
   const p = box('wide', 0, 0, { l: 10, w: 2, h: 2 });
-  const control = interaction([p]);
+  const msgs = [];
+  const control = interaction([p], (m, kind) => msgs.push([m, kind]));
   control.nudgeSelected({ dy: 1 });
-  assert.equal(p.y, 0);
+  assert.equal(p.y, 1, 'illegal floating nudge is committed');
+  assert.equal(msgs.length, 1);
+  assert.match(msgs[0][0], /unsupported/);
+  assert.equal(msgs[0][1], 'warn');
   control.transformPlacement(p, (d) => ({ dims: { l: d.w, w: d.l, h: d.h }, rot: { rot: 90 } }), 'rotate');
-  assert.equal(p.dims.w, 2);
+  assert.equal(p.dims.w, 2, 'rotation that leaves the container still reverts');
 });
 
 // --- Drag-time auto-reorientation (fitAtSpot + moveSingle) -----------------
@@ -182,18 +188,23 @@ test('single-item drag settles on top of cargo blocking the floor spot', () => {
   control.moveSingle({ x: 0, z: 0 }); // onto B's footprint: floor taken, A stacks on top
   assert.deepEqual({ x: a.x, y: a.y, z: a.z }, { x: 0, y: 2, z: 0 });
 });
-test('single-item drag snaps back when there is no legal rest', () => {
-  const b = { ...box('b'), category: 'fragile' }; // fragile: cannot support cargo
+test('single-item drag onto a fragile base commits with a warning', () => {
+  const b = { ...box('b'), category: 'fragile' }; // fragile: cannot legally support cargo
   const a = { ...box('a', 6, 0, { l: 2, w: 2, h: 2 }) };
   a.rot = { rot: 0, tipped: false };
-  const control = interaction([b, a]);
+  const msgs = [];
+  const control = interaction([b, a], (m, kind) => msgs.push([m, kind]));
   control.dragging = {
     moveSet: new Set(['a']), moved: false,
     anchor: { x: 6, z: 0 },
     members: [{ placement: a, offset: { x: 0, z: 0 }, lastValid: { x: a.x, y: a.y, z: a.z } }],
   };
   control.moveSingle({ x: 0, z: 0 }); // onto a fragile base: no legal rest
-  assert.deepEqual({ x: a.x, y: a.y, z: a.z }, { x: 6, y: 0, z: 0 });
+  assert.deepEqual({ x: a.x, y: a.y, z: a.z }, { x: 0, y: 2, z: 0 }, 'illegal rest is allowed');
+  control.onUp();
+  assert.equal(msgs.length, 1, 'the rule violation is warned on release');
+  assert.match(msgs[0][0], /unsupported/);
+  assert.equal(msgs[0][1], 'warn');
 });
 test('plain drag crosses stacked cargo: settles on the far stack tops', () => {
   const spec = getContainer('20STD');
@@ -289,7 +300,7 @@ test('carriedDependents stacks transitively but skips independent cargo', () => 
   assert.deepEqual([...control.carriedDependents([b, c, e, d], ['c'])].sort(), ['c', 'e']);
   assert.deepEqual([...control.carriedDependents([b, c, e, d], ['d'])], ['d']);
 });
-test('cargo shared with a stationary base blocks the carry and explains why', () => {
+test('cargo shared with a stationary base is carried with a warning, not blocked', () => {
   const b = { ...box('b', 0), dims: { l: 4, w: 7, h: 3 } };
   const d = { ...box('d', 4), dims: { l: 4, w: 7, h: 3 } };
   const f = { ...box('f', 3, 3), dims: { l: 4, w: 4, h: 2 } }; // F straddles B and D
@@ -307,11 +318,10 @@ test('cargo shared with a stationary base blocks the carry and explains why', ()
   };
   control.moveGroup({ x: 10, z: 0 }); // F would leave its other base D behind
   control.onUp();
-  assert.equal(b.x, 0, 'move is rejected: F would be stranded off D');
-  assert.equal(f.x, 3);
+  assert.equal(b.x, 10, 'lenient move commits: F is stranded but allowed');
+  assert.equal(f.x, 13);
   assert.equal(msgs.length, 1);
   assert.match(msgs[0][0], /"f" would be unsupported/);
-  assert.match(msgs[0][0], /Shift-click/);
   assert.equal(msgs[0][1], 'warn');
 });
 test('a pre-existing floating item does not block unrelated drags', () => {
@@ -338,15 +348,15 @@ test('rotate is no longer blocked by a pre-existing unrelated layout error', () 
   }), 'rotate');
   assert.deepEqual(a.dims, { l: 2, w: 4, h: 2 }, 'rotate should commit despite the unrelated ghost');
 });
-test('rotate that would strand supported cargo still reverts', () => {
+test('rotate that would strand supported cargo commits with a warning', () => {
   const b = { ...box('b', 2), dims: { l: 6, w: 4, h: 3 } };    // spans x 2..8
   const c = { ...box('c', 6, 3), dims: { l: 2, w: 4, h: 2 } }; // C on B's tail (x 6..8)
   const msgs = [];
   const control = interaction([b, c], (m, kind) => msgs.push([m, kind]));
   control.transformPlacement(b, (d) => ({
     dims: { l: d.w, w: d.l, h: d.h }, rot: { rot: 90 },
-  }), 'rotate'); // rotated B spans x 2..6: C loses its base
-  assert.deepEqual(b.dims, { l: 6, w: 4, h: 3 }, 'rotate must revert: C would lose support');
+  }), 'rotate'); // rotated B spans x 2..6: C loses its base — allowed with a warning
+  assert.deepEqual(b.dims, { l: 4, w: 6, h: 3 }, 'rotate commits: C is stranded but allowed');
   assert.equal(msgs.length, 1);
   assert.match(msgs[0][0], /"c" would be unsupported/);
   assert.equal(msgs[0][1], 'warn');

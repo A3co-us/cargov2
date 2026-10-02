@@ -332,7 +332,6 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
       label: 'Total Weight',
       valueHtml: escapeHtml(fmtLb(st.totalWeight)),
       note: `${fmtPct(st.weightPct)} of payload`,
-      tone: st.overweight ? 'danger' : 'ok',
     },
     {
       label: 'Volume Used',
@@ -342,7 +341,6 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
     {
       label: 'Hazmat Items',
       value: st.hazmatCount,
-      tone: st.hazmatCount > 0 ? 'warn' : '',
     },
   ]);
 
@@ -363,7 +361,7 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
         <td class="num">${i + 1}</td>
         <td>${escapeHtml(p.name)}</td>
         <td>${escapeHtml(titleCase(p.category))}</td>
-        <td class="center">${haz ? pill(p.hazmatClass, 'danger') : '<span class="rp-pill muted">—</span>'}</td>
+        <td class="center">${haz ? pill(p.hazmatClass) : '<span class="rp-pill muted">—</span>'}</td>
         <td>L ${escapeHtml(fmtFeet(p.x))} · W ${escapeHtml(fmtFeet(p.z))} · H ${escapeHtml(fmtFeet(p.y))}</td>
         <td>${fmtInches(p.dims.l)}×${fmtInches(p.dims.w)}×${fmtInches(p.dims.h)}</td>
         <td class="num">${Math.round(p.weight).toLocaleString()} lb</td>
@@ -397,7 +395,6 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
       ['Prepared By', user?.username || '—'],
     ])}
     ${cards}
-    ${st.overweight ? `<p class="rp-note">${pill('Over payload limit', 'danger')} Total weight exceeds the container payload rating.</p>` : ''}
     ${viewImage ? `<h2 class="rp-section-title">Container View</h2>
     ${viewsFigure({ [viewKey]: viewImage }, [viewKey])}
     <p class="rp-note">View of the loaded container with item labels.</p>` : ''}
@@ -419,8 +416,7 @@ function balanceSummary(balance) {
     const label = side === 'front' || side === 'left' ? negLabel
       : side === 'back' || side === 'right' ? posLabel : 'Centered';
     const offset = Math.abs(a.cogOffsetPct).toFixed(0);
-    const tone = a.over ? 'warn' : 'ok';
-    return `<span class="rp-chip">${escapeHtml(label)} <b>${a.heavierPct.toFixed(0)}%</b> ${pill(a.over ? 'Check' : 'OK', tone)} <span class="rp-note" style="margin:0">CoG ${offset}% off center</span></span>`;
+    return `<span class="rp-chip">${escapeHtml(label)} <b>${a.heavierPct.toFixed(0)}%</b> <span class="rp-note" style="margin:0">CoG ${offset}% off center</span></span>`;
   };
   return `<div class="rp-chips">
     ${axis(balance.length, 'Fore-heavy', 'Aft-heavy')}
@@ -446,8 +442,8 @@ export function loadPlanHTML(scenario, project, user, views) {
 
   const cards = statCards([
     { label: 'Load Steps', value: steps.length },
-    { label: 'On Floor', value: steps.length - stackedCount, tone: 'ok' },
-    { label: 'Stacked', value: stackedCount, tone: stackedCount ? 'warn' : '' },
+    { label: 'On Floor', value: steps.length - stackedCount },
+    { label: 'Stacked', value: stackedCount },
     { label: 'Total Weight', valueHtml: escapeHtml(fmtLb(st.totalWeight)), note: `${fmtPct(st.weightPct)} of payload` },
   ]);
 
@@ -459,7 +455,7 @@ export function loadPlanHTML(scenario, project, user, views) {
         <td>L ${escapeHtml(fmtFeet(s.pos.x))} · W ${escapeHtml(fmtFeet(s.pos.z))} · H ${escapeHtml(fmtFeet(s.pos.y))}</td>
         <td>${fmtInches(s.dims.l)}×${fmtInches(s.dims.w)}×${fmtInches(s.dims.h)}</td>
         <td class="num">${Math.round(s.weight).toLocaleString()} lb</td>
-        <td class="center">${s.stacked ? pill('Stacked', 'warn') : pill('Floor', 'ok')}</td>
+        <td class="center">${s.stacked ? pill('Stacked') : pill('Floor')}</td>
       </tr>`
     )
     .join('');

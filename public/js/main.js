@@ -9,7 +9,7 @@ import { Interaction } from './interaction.js';
 import { getContainer, CONTAINER_TYPES } from './container.js';
 import { makeCatalogItem, uid, itemColor, findFreePlacementAnyOrientation, layoutError, removalError, overhangFractions, DEFAULT_MAX_OVERHANG_PCT } from './cargo.js';
 import { createProjectSaver } from './persistence.js';
-import { validateProjectData } from './projectValidation.js';
+import { validateProjectData, collectLayoutWarnings } from './projectValidation.js';
 import { startPacking } from './packingJob.js';
 import { presetToCatalogItem, deleteCustomPreset } from './library.js';
 import {
@@ -217,8 +217,10 @@ function initScene() {
     if (isViewer()) { sel.value = activeScenario()?.containerType || sel.value; return; }
     const scn = activeScenario();
     if (!scn) return;
+    // Layout-rule problems warn but no longer block the switch (illegal
+    // staging is allowed); structural problems still throw above in validate.
     const error = layoutError(scn.placements, getContainer(sel.value), catalogItem, overhangAllowance(scn));
-    if (error) { toast(error, 'warn'); sel.value = scn.containerType; return; }
+    if (error) toast(`${error} — switching anyway`, 'warn');
     scn.containerType = sel.value;
     markDirty();
     refreshScene();
@@ -440,8 +442,9 @@ function editPlacement(id) {
     (out) => {
       const candidate = { ...p, name: out.name, category: out.category, hazmatClass: out.hazmatClass,
         dims: { l: out.length, w: out.width, h: out.height }, weight: out.weight, color: itemColor(out) };
+      // Layout-rule problems warn but no longer block the edit.
       const error = layoutError(scn.placements.map((q) => q === p ? candidate : q), getContainer(scn.containerType), catalogItem, overhangAllowance(scn));
-      if (error) throw new Error(error);
+      if (error) toast(error, 'warn');
       Object.assign(p, candidate);
       markDirty(); renderAll();
     }
@@ -474,11 +477,11 @@ function removePlacement(id) {
   const idx = scn.placements.findIndex((x) => x.id === id);
   if (idx < 0) return;
   const spec = getContainer(scn.containerType);
-  // Block only when the removal itself introduces a new problem (e.g. strands
-  // cargo the item was supporting); pre-existing layout issues elsewhere must
-  // not prevent deleting an unrelated item.
+  // Removing an item that supports cargo warns (the stranded item is flagged
+  // in the scene) but no longer blocks the removal — the removed item goes to
+  // the staging area either way.
   const error = removalError(scn.placements, id, spec, catalogItem, overhangAllowance(scn));
-  if (error) { toast(error, 'warn'); return; }
+  if (error) toast(error, 'warn');
   staging.push(scn.placements[idx]);
   scn.placements.splice(idx, 1);
   // Drop the removed item from the (possibly multi-) selection.
@@ -965,7 +968,15 @@ function wireTopbar() {
         }
       },
       onImport: async (file) => {
-        try { const proj = await importProjectJSON(file); if (!mayDiscardChanges()) return; setProject(proj); markDirty(); renderAll(); toast('Imported', 'ok'); }
+        try {
+          const proj = await importProjectJSON(file);
+          if (!mayDiscardChanges()) return;
+          setProject(proj); markDirty(); renderAll(); toast('Imported', 'ok');
+          const warnings = collectLayoutWarnings(proj);
+          if (warnings.length) {
+            toast(`Imported with ${warnings.length} layout warning${warnings.length === 1 ? '' : 's'} — ${warnings[0]}`, 'warn');
+          }
+        }
         catch (e) { toast(e.message, 'error'); }
       },
     });
@@ -1004,6 +1015,11 @@ async function saveProject() {
     await persistProject(p);
     renderAll();
     toast(state.project === p && state.dirty ? 'Snapshot saved; newer edits still need saving' : 'Project saved', 'ok');
+    // Illegal-but-allowed layouts save fine; surface the advisories.
+    const warnings = collectLayoutWarnings(p);
+    if (warnings.length) {
+      toast(`Saved with ${warnings.length} layout warning${warnings.length === 1 ? '' : 's'} — ${warnings[0]}`, 'warn');
+    }
   } catch (e) { toast(e.message, 'error'); }
 }
 

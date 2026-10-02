@@ -14,6 +14,30 @@ import { activeScenario, catalogItem } from './store.js';
 import { collidesAny, canStack, overlapsXZ, isFullySupported, COLLISION_EPS, snapToGrid, layoutError, fitAtSpot, groupRestingDelta, DEFAULT_MAX_OVERHANG_PCT } from './cargo.js';
 import { toast } from './ui.js';
 
+/**
+ * Smallest vertical shift that makes a group pose physically clear (in bounds,
+ * no 3D overlap with outside cargo) while ignoring stacking-rule legality —
+ * the lenient fallback when a group drag finds no legal rest. Tries the floor
+ * level first, then climbing on top of whatever the group would collide with.
+ * Returns dy, or null when no clear pose exists at this XZ footprint.
+ */
+function lenientSettle(candidates, outside, spec) {
+  const options = new Set();
+  if (candidates.length) options.add(-Math.min(...candidates.map((c) => c.y))); // settle to the floor
+  for (const c of candidates) {
+    for (const o of outside) {
+      if (collidesAny(c, [o])) options.add(o.y + o.dims.h - c.y); // climb on top of the blocker
+    }
+  }
+  for (const dy of [...options].sort((a, b) => a - b)) {
+    const posed = candidates.map((c) => ({ ...c, y: c.y + dy }));
+    if (posed.some((p) => p.y < -COLLISION_EPS || p.y + p.dims.h > spec.height + COLLISION_EPS)) continue;
+    if (posed.some((p) => collidesAny(p, outside))) continue;
+    return dy;
+  }
+  return null;
+}
+
 export class Interaction {
   constructor(sceneMgr, callbacks) {
     this.sm = sceneMgr;
@@ -245,11 +269,31 @@ export class Interaction {
       d.lastValid = { x: p.x, y: p.y, z: p.z };
       this.dragging.moved = true;
     } else {
-      // Keep the item at its last valid, non-overlapping pose.
-      p.x = d.lastValid.x;
-      p.y = d.lastValid.y;
-      p.z = d.lastValid.z;
-      p.layer = p.y <= 1e-6 ? 0 : 1;
+      // Lenient fallback: no LEGAL rest here, but a physically clear spot is
+      // still usable — illegal staging is allowed with a warning on release.
+      // Settle on top of whatever sits under the footprint (the floor when
+      // nothing does), ignoring stacking-rule legality but never letting the
+      // item interpenetrate cargo or leave the container.
+      const lenient = this.lenientRest(x, z, p, spec);
+      if (lenient) {
+        // Evaluate the rule error BEFORE mutating p so the before/after
+        // comparison in candidateError sees the pre-move layout.
+        const candidate = { ...p, x: lenient.x, y: lenient.y, z: lenient.z };
+        this.dragging.lenient = this.candidateError([candidate]) ||
+          (this.dragging.lastReject || 'not a legal resting spot here');
+        p.x = lenient.x;
+        p.y = lenient.y;
+        p.z = lenient.z;
+        p.layer = p.y <= 1e-6 ? 0 : 1;
+        d.lastValid = { x: p.x, y: p.y, z: p.z };
+        this.dragging.moved = true;
+      } else {
+        // Keep the item at its last valid, non-overlapping pose.
+        p.x = d.lastValid.x;
+        p.y = d.lastValid.y;
+        p.z = d.lastValid.z;
+        p.layer = p.y <= 1e-6 ? 0 : 1;
+      }
     }
     this.sm.upsertPlacement(p, true);
   }
@@ -312,6 +356,7 @@ export class Interaction {
     // only land on empty floor and would wall up against any cargo in the path.
     const dy = groupRestingDelta(candidates, others, spec, activeScenario().maxOverhangPct ?? DEFAULT_MAX_OVERHANG_PCT);
     let error = null;
+    let lenient = null;
     if (dy == null) {
       // No legal rest here. Harvest the specific layout problem from the
       // fixed-height pose when there is one (e.g. cargo the move would
@@ -326,8 +371,19 @@ export class Interaction {
       // the full-layout rule check (door clearance, hazmat, payload...).
       error = this.candidateError(candidates);
     }
-    const accepted = !error;
+    let accepted = !error;
+    if (!accepted) {
+      // Lenient: commit any physically clear pose (in bounds, no 3D overlap)
+      // even when stacking/staging rules are violated — warn on release.
+      const ldy = lenientSettle(candidates, others, spec);
+      if (ldy != null) {
+        for (const c of candidates) c.y += ldy;
+        accepted = true;
+        lenient = error;
+      }
+    }
     this.dragging.lastReject = error || null;
+    this.dragging.lenient = lenient;
 
     for (let i = 0; i < members.length; i++) {
       const p = members[i].placement;
@@ -359,6 +415,9 @@ export class Interaction {
           this.cb.onSelect(this.dragging.shiftToggleId);
         }
         this.cb.onChange();
+        // Lenient commit: the move landed even though it broke a stacking or
+        // staging rule — surface the reason now that the drag is over.
+        if (this.dragging.lenient) toast(this.dragging.lenient, 'warn');
       } else if (this.dragging.shiftToggleId && !this.dragging.attempted) {
         // Shift+click without a drag: toggle the item in the multi-selection.
         this.cb.onSelect(this.dragging.shiftToggleId, { toggle: true });
@@ -426,17 +485,16 @@ export class Interaction {
         rot: { ...(p.rot || {}), rot: ((p.rot?.rot || 0) + 90) % 360 },
       }), 'rotate');
     } else if (key === 't' && p) {
-      // Respect the catalog item's "do not tip" flag: never allow laying it
-      // on its side, whether tipping in or reverting back to upright.
+      // Do-not-tip is a warning, not a block: the item may be laid on its side
+      // (illegal staging is allowed), but the user is told it was flagged.
       const base = catalogItem(p.catalogItemId);
       if (base?.noTip && !p.rot?.tipped) {
-        toast(`"${p.name}" is marked do-not-tip and cannot be laid on its side`, 'warn');
-      } else {
-        this.transformPlacement(p, (d) => ({
-          dims: { l: d.h, w: d.w, h: d.l },
-          rot: { ...(p.rot || {}), tipped: !p.rot?.tipped },
-        }), 'tip');
+        toast(`"${p.name}" is marked do-not-tip — laying it on its side anyway`, 'warn');
       }
+      this.transformPlacement(p, (d) => ({
+        dims: { l: d.h, w: d.w, h: d.l },
+        rot: { ...(p.rot || {}), tipped: !p.rot?.tipped },
+      }), 'tip');
     } else if (key === 'e' && p) {
       this.cb.onEdit(id);
     } else if (key === 'delete' || key === 'backspace') {
@@ -474,6 +532,42 @@ export class Interaction {
     const before = layoutError(placements, spec, catalogItem, allowance);
     const after = layoutError(placements.map((p) => replacements.get(p.id) || p), spec, catalogItem, allowance);
     return after && after !== before ? after : null;
+  }
+
+  /**
+   * Best-effort resting pose for a single dragged item at (x, z) when no LEGAL
+   * rest exists: clamp inside the container, then settle on top of whatever
+   * cargo sits under the footprint (the floor when nothing does) — ignoring
+   * stacking-rule legality but refusing any pose that would interpenetrate
+   * cargo or exceed the container height. Returns {x,y,z} or null.
+   */
+  lenientRest(x, z, p, spec) {
+    const snap = this.snapEnabled() ? (v) => snapToGrid(v) : (v) => v;
+    const nx = Math.max(0, Math.min(snap(x), spec.length - p.dims.l));
+    const nz = Math.max(0, Math.min(snap(z), spec.width - p.dims.w));
+    let y = 0;
+    for (const q of activeScenario().placements) {
+      if (q.id === p.id) continue;
+      if (overlapsXZ({ x: nx, z: nz, dims: p.dims }, q)) y = Math.max(y, q.y + q.dims.h);
+    }
+    if (y + p.dims.h > spec.height + COLLISION_EPS) return null;
+    if (collidesAny({ ...p, x: nx, y, z: nz }, activeScenario().placements)) return null;
+    return { x: nx, y, z: nz };
+  }
+
+  /**
+   * Purely PHYSICAL problem with a candidate pose (3D overlap or out of the
+   * container), or null. These stay hard blocks — rule violations (support,
+   * overhang, hazmat, payload, door clearance…) are only warned.
+   */
+  physicalError(candidate, spec, others = activeScenario().placements) {
+    if (collidesAny(candidate, others)) return 'overlaps other cargo';
+    const d = candidate.dims;
+    if (candidate.x < -COLLISION_EPS || candidate.z < -COLLISION_EPS || candidate.y < -COLLISION_EPS ||
+        candidate.x + d.l > spec.length + COLLISION_EPS ||
+        candidate.z + d.w > spec.width + COLLISION_EPS ||
+        candidate.y + d.h > spec.height + COLLISION_EPS) return 'outside the container';
+    return null;
   }
 
   /**
@@ -592,13 +686,17 @@ export class Interaction {
       z: p.z + cdz,
       dims: p.dims,
     }));
-    const blocked = candidates.some((c) => collidesAny(c, others)) || this.candidateError(candidates);
+    // Only PHYSICAL problems (3D overlap) block the nudge. Rule violations
+    // (unsupported, overhang, hazmat…) are committed and warned — illegal
+    // staging is allowed.
+    const blocked = candidates.some((c) => collidesAny(c, others));
     if (blocked) {
       // Nothing moved yet (we validated candidates), just warn and refresh.
       for (let i = 0; i < members.length; i++) this.sm.upsertPlacement(members[i], true);
-      toast(typeof blocked === 'string' ? blocked : 'Blocked — no room to move there', 'warn');
+      toast('Blocked — no room to move there', 'warn');
       return;
     }
+    const rule = this.candidateError(candidates);
 
     for (let i = 0; i < members.length; i++) {
       const p = members[i];
@@ -610,6 +708,7 @@ export class Interaction {
       this.sm.upsertPlacement(p, true);
     }
     this.cb.onChange();
+    if (rule) toast(rule, 'warn');
   }
 
   /**
@@ -630,13 +729,17 @@ export class Interaction {
     candidate.rot = change.rot;
     this.clampInside(candidate);
 
-    const error = this.candidateError([candidate]);
-    if (collidesAny(candidate, activeScenario().placements) || error) {
+    // Only PHYSICAL problems (out of the container or 3D overlap) still block
+    // the transform. Rule violations are committed and warned.
+    const spec = this.cb.getContainerSpec();
+    const physical = this.physicalError(candidate, spec, activeScenario().placements);
+    if (physical) {
       // Rejected: not enough room for this orientation here.
       this.sm.upsertPlacement(p, true);
-      toast(error || `Not enough room to ${label} here`, 'warn');
+      toast(physical === 'overlaps other cargo' ? `Not enough room to ${label} here` : physical, 'warn');
       return;
     }
+    const error = this.candidateError([candidate]);
     p.dims = candidate.dims;
     p.rot = candidate.rot;
     p.x = candidate.x;
@@ -644,5 +747,6 @@ export class Interaction {
     p.z = candidate.z;
     this.sm.upsertPlacement(p, true);
     this.cb.onChange();
+    if (error) toast(error, 'warn');
   }
 }
