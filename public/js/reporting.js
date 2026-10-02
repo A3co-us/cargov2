@@ -235,6 +235,11 @@ function printStyles() {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 8px 0 4px;
   }
   .rp-views-single { grid-template-columns: 1fr; }
+  /* A single full-width view must fit on page 1 below the masthead/meta/cards,
+     so cap its height and letterbox the image inside. */
+  .rp-views-single .rp-figure img {
+    max-height: 105mm; object-fit: contain; margin: 0 auto;
+  }
   .rp-figure {
     margin: 0; border: 1px solid var(--rp-border); border-radius: 8px; overflow: hidden;
     background: #fff; break-inside: avoid;
