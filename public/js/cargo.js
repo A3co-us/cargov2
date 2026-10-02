@@ -134,6 +134,12 @@ export function canStack(top, base) {
 
 export const COLLISION_EPS = 1e-6;
 
+// Vertical tolerance (ft, ~3/4") for treating a base as supporting an item
+// whose bottom sits slightly above the base top: neighboring stacks a hair
+// apart in height must still count as (bridging) support, otherwise stacking
+// across them is reported as "no legal resting spot".
+export const SUPPORT_TOL = 0.06;
+
 // ---------------------------------------------------------------------------
 // Snap-to-grid (viewer)
 //
@@ -224,7 +230,10 @@ export function restingY(x, z, dims, placements, spec, topItem, baseLookup, skip
   if (restY > COLLISION_EPS && topItem) {
     const matched = overlapping.filter((b) => {
       const top = b.y + b.dims.h;
-      if (Math.abs(top - restY) > Math.max(1e-4, COLLISION_EPS)) return false;
+      // A base supports the item when its top is at (or just below — within
+      // SUPPORT_TOL, i.e. the item bridges the tiny step) the resting height.
+      // A top ABOVE restY would collide and cannot have survived the climb.
+      if (top > restY + Math.max(1e-4, COLLISION_EPS) || top < restY - SUPPORT_TOL) return false;
       const base = (baseLookup && baseLookup(b)) || b;
       return canStack(topItem, base);
     });
@@ -320,7 +329,8 @@ export function groupRestingDelta(members, outside, spec, maxOverhangPct = 0) {
     const supported = posed.every((p) => {
       if (p.y <= COLLISION_EPS) return true; // the floor is always a valid base
       const supporters = [...posed.filter((q) => q !== p), ...outside].filter((q) =>
-        Math.abs(q.y + q.dims.h - p.y) < 1e-4 && overlapsXZ(p, q) && canStack(p, q));
+        q.y + q.dims.h >= p.y - SUPPORT_TOL && q.y + q.dims.h <= p.y + 1e-4 &&
+        overlapsXZ(p, q) && canStack(p, q));
       return isFullySupported(p, supporters, maxOverhangPct);
     });
     if (supported) return dy;
@@ -352,11 +362,28 @@ export function findFreePlacement(placements, spec, dims, options = {}) {
   const stepX = Math.max(0.25, Math.min(dims.l, maxX || dims.l) / 4 || 0.25);
   const stepZ = Math.max(0.25, Math.min(dims.w, maxZ || dims.w) / 4 || 0.25);
 
+  // Scan coordinates: the regular grid PLUS every edge-aligned coordinate
+  // (a placement's own edge, and where the new item would touch its far edge),
+  // so legal slots between items are never skipped just because they fall
+  // between grid points.
+  const coords = (maxC, dimC, step, along) => {
+    const vals = new Set();
+    for (let v = 0; v <= maxC + COLLISION_EPS; v += step) vals.add(Math.min(v, Math.max(0, maxC)));
+    for (const p of placements) {
+      for (const v of [p[along], p[along] + p.dims[dimC === 'l' ? 'l' : 'w'] - dimC]) {
+        if (Number.isFinite(v)) vals.add(Math.max(0, Math.min(v, maxC)));
+      }
+    }
+    return [...vals].sort((a, b) => a - b);
+  };
+  const xs = coords(maxX, dims.l, stepX, 'x');
+  const zs = coords(maxZ, dims.w, stepZ, 'z');
+
   const scan = (allowStack) => {
-    for (let z = 0; z <= maxZ + COLLISION_EPS; z += stepZ) {
-      const cz = Math.min(z, Math.max(0, maxZ));
-      for (let x = 0; x <= maxX + COLLISION_EPS; x += stepX) {
-        const cx = Math.min(x, Math.max(0, maxX));
+    for (const z of zs) {
+      const cz = z;
+      for (const x of xs) {
+        const cx = x;
         let y = 0;
         if (allowStack) {
           y = restingY(cx, cz, dims, placements, spec, topItem, baseLookup, undefined, options.maxOverhangPct ?? 0);
@@ -515,8 +542,8 @@ export function removalError(placements, removedId, spec, lookup = () => null, m
 
 /** Placements legally supporting `p` right now (the predicate layoutError uses). */
 export function legalSupports(p, placements) {
-  return placements.filter((q) => q !== p && Math.abs(q.y + q.dims.h - p.y) < 1e-4 &&
-    overlapsXZ(p, q) && canStack(p, q));
+  return placements.filter((q) => q !== p && q.y + q.dims.h <= p.y + 1e-4 &&
+    q.y + q.dims.h >= p.y - SUPPORT_TOL && overlapsXZ(p, q) && canStack(p, q));
 }
 
 /**
