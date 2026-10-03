@@ -453,6 +453,40 @@ export function findFreePlacementAnyOrientation(placements, spec, dims, options 
   return null;
 }
 
+// How close (in feet) a drag target may be to a neighboring footprint edge
+// for the support-magnet to win over the plain grid snap. Auto-packed layouts
+// place cargo at fractional, off-grid coordinates (e.g. flush against a wall at
+// z = 4.375 ft in a 40HC), so grid snapping alone can never zero out a stacking
+// misalignment — the magnet aligns footprints instead. 0.5 ft = 6 inches.
+export const MAGNET_TOL_FT = 0.5;
+
+/**
+ * Support-magnet snapping for one axis. Given the raw (pointer) min-coordinate
+ * `raw` and the item's span along this axis, consider three alignment poses
+ * against every other placement's footprint on that axis —
+ *   - left-aligned  (raw = other.x)
+ *   - right-aligned (raw + span = other edge)
+ *   - centered      (raw = other.x + (other span - span) / 2)
+ * — plus the two container walls. When the closest alignment candidate is
+ * within MAGNET_TOL_FT of the raw target it wins (even if the plain grid snap
+ * would move the item less); otherwise the fallback (grid snap, or identity)
+ * applies. Returns an unclamped coordinate; callers clamp inside the container.
+ */
+function magnetizeAxis(raw, supports, fallback, span) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const s of supports) {
+    for (const c of [s.lo, s.lo + s.span - span, s.lo + (s.span - span) / 2]) {
+      const d = Math.abs(c - raw);
+      if (d < bestDist - 1e-9) {
+        best = c;
+        bestDist = d;
+      }
+    }
+  }
+  return bestDist <= MAGNET_TOL_FT ? best : fallback;
+}
+
 /**
  * Try to fit an item at a specific pointer spot, retrying other orientations
  * when its current one doesn't fit there — the drag-time counterpart of
@@ -465,9 +499,12 @@ export function findFreePlacementAnyOrientation(placements, spec, dims, options 
  *
  * @param {number} x,z   requested min-corner position (pre-snap pointer target)
  * @param {object} options { item?, noTip?, baseLookup?, skipId?, stack?,
- *   snapGrid?, validate?(candidate)=>error|null, diag?(reason) }
+ *   snapGrid?, magnet?, validate?(candidate)=>error|null, diag?(reason) }
  *   - stack:    settle onto supports via restingY instead of dropping to y=0
  *   - skipId:   placement id to ignore as obstacle (the dragged item itself)
+ *   - magnet:   support-magnet snapping (default true) — align the footprint
+ *               to a neighboring cargo edge or wall within MAGNET_TOL_FT,
+ *               overriding the plain grid snap
  *   - validate: extra rule check; candidate is rejected when it returns truthy
  *   - diag:     optional callback receiving the most specific rejection reason
  *               when no orientation fits (a validate() error beats generics)
@@ -478,6 +515,18 @@ export function findFreePlacementAnyOrientation(placements, spec, dims, options 
 export function fitAtSpot(x, z, placements, spec, dims, options = {}) {
   const noTip = !!(options.noTip ?? options.item?.noTip);
   const snap = options.snapGrid ? (v) => snapToGrid(v) : (v) => v;
+  // Support-magnet: alignment candidates from every other placement's footprint
+  // (left/right/centered per axis). Walls are added per-orientation below.
+  const magnet = options.magnet !== false;
+  const supportsX = [];
+  const supportsZ = [];
+  if (magnet) {
+    for (const q of placements) {
+      if (!q || !q.dims || q.id === options.skipId) continue;
+      supportsX.push({ lo: q.x, span: q.dims.l });
+      supportsZ.push({ lo: q.z, span: q.dims.w });
+    }
+  }
   let reason = null; // why no orientation has fit so far (for options.diag)
   for (const o of placementOrientations(dims, { noTip })) {
     const odims = { l: o.l, w: o.w, h: o.h };
@@ -488,9 +537,24 @@ export function fitAtSpot(x, z, placements, spec, dims, options = {}) {
     }
     // Keep the footprint CENTER at the requested spot when the orientation
     // changes, so a reoriented item doesn't jump sideways out from under the
-    // pointer; then snap and clamp inside the container with the new dims.
-    const nx = Math.max(0, Math.min(snap(x + (dims.l - o.l) / 2), spec.length - o.l));
-    const nz = Math.max(0, Math.min(snap(z + (dims.w - o.w) / 2), spec.width - o.w));
+    // pointer; then snap (grid + support-magnet) and clamp inside the
+    // container with the new dims. The magnet aligns the footprint to a
+    // neighboring cargo edge or a wall when one is close, so stacking on
+    // off-grid auto-packed cargo lands flush instead of overhanging.
+    const rawX = x + (dims.l - o.l) / 2;
+    const rawZ = z + (dims.w - o.w) / 2;
+    const wallX = magnet
+      ? supportsX.concat([{ lo: 0, span: o.l }, { lo: spec.length - o.l, span: o.l }])
+      : null;
+    const wallZ = magnet
+      ? supportsZ.concat([{ lo: 0, span: o.w }, { lo: spec.width - o.w, span: o.w }])
+      : null;
+    const nx = Math.max(0, Math.min(
+      magnet ? magnetizeAxis(rawX, wallX, snap(rawX), o.l) : snap(rawX),
+      spec.length - o.l));
+    const nz = Math.max(0, Math.min(
+      magnet ? magnetizeAxis(rawZ, wallZ, snap(rawZ), o.w) : snap(rawZ),
+      spec.width - o.w));
     let y = 0;
     if (options.stack) {
       y = restingY(nx, nz, odims, placements, spec, options.item, options.baseLookup, options.skipId, options.maxOverhangPct ?? 0);

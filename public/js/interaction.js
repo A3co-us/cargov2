@@ -244,6 +244,8 @@ export class Interaction {
       skipId: p.id,
       stack: true,
       snapGrid: this.snapEnabled(),
+      // Magnets follow the snap toggle: snapping OFF means fully raw dragging.
+      magnet: this.snapEnabled(),
       maxOverhangPct: activeScenario().maxOverhangPct ?? DEFAULT_MAX_OVERHANG_PCT,
       validate: (candidate) => this.candidateError([{ ...p, ...candidate }]),
       diag: (reason) => { this.dragging.lastReject = reason; },

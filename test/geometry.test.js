@@ -148,6 +148,39 @@ test('fitAtSpot stacks on supports only in the orientation that fits', () => {
   assert.equal(fit.y, 2); // resting on top of the support
   assert.deepEqual(fit.dims, { l: 4, w: 3, h: 2 });
 });
+test('support-magnet aligns stacked drags to off-grid base footprints', () => {
+  const spec = getContainer('40HC'); // interior width ≈ 7.7083 ft
+  const dims = { l: 4, w: 10 / 3, h: 3.75 }; // 48″ × 40″ × 45″ pallet
+  // Auto-packed base flush against the right wall at z = 4.375 ft (52.5 in —
+  // exactly half a cell off the 1″ grid), as in the "Greece Cont01" demo.
+  const base = { ...box('GSP0071', 33.25, 0, dims), z: 4.375 };
+  const opts = { stack: true, item: { category: 'general', hazmatClass: 'none' }, maxOverhangPct: 5 };
+  // User releases ~4.5″ misaligned (z=4). Without the magnet the 1″ grid snap
+  // keeps the item misaligned → 11.25% overhang → no legal rest in any
+  // orientation (the exact "GSP0073 would be unsupported" diagnostic).
+  assert.equal(cargo.fitAtSpot(33.6, 4, [base], spec, dims, { ...opts, magnet: false, snapGrid: true }), null);
+  // With the magnet (default on) the footprint snaps flush onto the base:
+  // zero overhang, resting on top at y = 3.75.
+  const fit = cargo.fitAtSpot(33.6, 4, [base], spec, dims, { ...opts, snapGrid: true });
+  assert.ok(fit, 'expected the magnet to align the item onto the base');
+  assert.equal(fit.x, 33.25);
+  assert.equal(fit.z, 4.375);
+  assert.equal(fit.y, 3.75);
+  assert.deepEqual(fit.dims, dims);
+});
+test('support-magnet stays out of the way of far drops', () => {
+  const spec = getContainer('40HC');
+  const dims = { l: 4, w: 10 / 3, h: 3.75 };
+  const base = { ...box('base', 33.25, 0, dims), z: 4.375 };
+  // A floor drop far from every edge/footprint keeps the raw target — the
+  // magnet only engages within MAGNET_TOL_FT (0.5 ft).
+  const fit = cargo.fitAtSpot(10, 3.4, [base], spec, dims);
+  assert.ok(fit);
+  assert.equal(fit.x, 10);
+  assert.equal(fit.z, 3.4);
+  assert.equal(fit.y, 0);
+});
+
 test('fitAtSpot never tips a do-not-tip item', () => {
   const spec = getContainer('20STD'); // internal height ~7.85 ft
   // 9 ft tall upright only fits tipped (h becomes 2). With noTip, no fit.
