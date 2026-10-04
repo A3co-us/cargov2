@@ -49,7 +49,58 @@ function formatDate(d = new Date()) {
 // Load plan model
 // ---------------------------------------------------------------------------
 
-/** Generate step-by-step loading instructions from a container loading. */
+// Tolerance for "flush against a surface": ~1 inch.
+const FLUSH_EPS = 1 / 12;
+
+/**
+ * Find the item a placement is resting on: the tallest placement beneath it
+ * whose footprint overlaps. Returns null for floor placements.
+ */
+function findSupport(p, placements) {
+  let best = null;
+  for (const q of placements) {
+    if (q === p || q.y >= p.y - FLUSH_EPS) continue;
+    const overlapX = Math.min(p.x + p.dims.l, q.x + q.dims.l) - Math.max(p.x, q.x);
+    const overlapZ = Math.min(p.z + p.dims.w, q.z + q.dims.w) - Math.max(p.z, q.z);
+    if (overlapX > FLUSH_EPS && overlapZ > FLUSH_EPS && (!best || q.y > best.y)) best = q;
+  }
+  return best;
+}
+
+/**
+ * Human-readable location phrase, anchored to what the loader can see from
+ * the doors. Boundary-flush coordinates become words; the length position is
+ * given as distance from the rear doors (the direction cargo travels in),
+ * since "L 7' 5"" from the front wall is unusable without a diagram.
+ */
+export function locationText(p, spec) {
+  const parts = [];
+  const gapDoors = spec.length - (p.x + p.dims.l);
+  if (p.x <= FLUSH_EPS) parts.push('front wall');
+  else if (gapDoors <= FLUSH_EPS) parts.push('at rear doors');
+  else parts.push(`${fmtFeet(gapDoors)} from rear doors`);
+
+  const gapRight = spec.width - (p.z + p.dims.w);
+  if (p.z <= FLUSH_EPS) parts.push('left wall');
+  else if (gapRight <= FLUSH_EPS) parts.push('right wall');
+  else if (Math.abs(gapRight - p.z) <= FLUSH_EPS) parts.push('centered');
+  else parts.push(p.z < gapRight ? `${fmtFeet(p.z)} from left wall` : `${fmtFeet(gapRight)} from right wall`);
+
+  // Height is omitted for floor placement — the Placement column already
+  // says "On floor" / "Stacked on …", which is the useful instruction.
+  if (p.y > FLUSH_EPS) parts.push(`${fmtFeet(p.y)} high`);
+  return parts.join(' · ');
+}
+
+/** Placement label: how this item is supported. */
+export function placementText(p, placements) {
+  const support = findSupport(p, placements);
+  return support ? `Stacked on ${support.name}` : 'On floor';
+}
+
+/**
+ * Generate step-by-step loading instructions from a container loading.
+ */
 export function generateLoadPlan(scenario) {
   // Order: bottom layers first, then front-to-back, left-to-right.
   const ordered = [...scenario.placements].sort((a, b) => {
@@ -68,6 +119,7 @@ export function generateLoadPlan(scenario) {
       dims: p.dims,
       pos: { x: p.x, y: p.y, z: p.z },
       stacked,
+      stackedOn: findSupport(p, scenario.placements)?.name || null,
       // Backwards-compatible one-line description.
       text:
         `Place "${p.name}" at length ${fmtFeet(p.x)}, width ${fmtFeet(p.z)}, ` +
@@ -375,7 +427,7 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
         <td>${escapeHtml(p.name)}</td>
         <td>${escapeHtml(titleCase(p.category))}</td>
         <td class="center">${haz ? pill(p.hazmatClass) : '<span class="rp-pill muted">—</span>'}</td>
-        <td>L ${escapeHtml(fmtFeet(p.x))} · W ${escapeHtml(fmtFeet(p.z))} · H ${escapeHtml(fmtFeet(p.y))}</td>
+        <td>${escapeHtml(locationText(p, spec))}</td>
         <td>${fmtInches(p.dims.l)}×${fmtInches(p.dims.w)}×${fmtInches(p.dims.h)}</td>
         <td class="num">${Math.round(p.weight).toLocaleString()} lb</td>
       </tr>`;
@@ -386,7 +438,7 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
     ? `<table class="rp-table">
         <thead><tr>
           <th class="num">#</th><th>Item</th><th>Category</th>
-          <th class="center">Hazmat</th><th>Position (L·W·H)</th>
+          <th class="center">Hazmat</th><th>Location</th>
           <th>Dims (L×W×H)</th><th class="num">Weight</th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -465,10 +517,10 @@ export function loadPlanHTML(scenario, project, user, views) {
       (s) => `<tr>
         <td class="num">${s.step}</td>
         <td>${escapeHtml(s.name)}</td>
-        <td>L ${escapeHtml(fmtFeet(s.pos.x))} · W ${escapeHtml(fmtFeet(s.pos.z))} · H ${escapeHtml(fmtFeet(s.pos.y))}</td>
+        <td>${escapeHtml(locationText({ ...s.pos, dims: s.dims }, spec))}</td>
         <td>${fmtInches(s.dims.l)}×${fmtInches(s.dims.w)}×${fmtInches(s.dims.h)}</td>
         <td class="num">${Math.round(s.weight).toLocaleString()} lb</td>
-        <td class="center">${s.stacked ? pill('Stacked') : pill('Floor')}</td>
+        <td class="center">${s.stackedOn ? pill(`Stacked on ${s.stackedOn}`) : pill('On floor')}</td>
       </tr>`
     )
     .join('');
@@ -476,7 +528,7 @@ export function loadPlanHTML(scenario, project, user, views) {
   const table = steps.length
     ? `<table class="rp-table">
         <thead><tr>
-          <th class="num">Step</th><th>Item</th><th>Position (L·W·H)</th>
+          <th class="num">Step</th><th>Item</th><th>Location</th>
           <th>Dims (L×W×H)</th><th class="num">Weight</th><th class="center">Placement</th>
         </tr></thead>
         <tbody>${rows}</tbody>
