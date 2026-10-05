@@ -2,7 +2,7 @@
 import { api, loadToken, saveToken } from './api.js';
 import {
   state, setProject as setStoreProject, newProject, makeScenario, activeScenario, catalogItem, markDirty,
-  setSelection, toggleSelection, clearSelection, remainingQty, placedQty,
+  setSelection, toggleSelection, clearSelection, remainingQty, placedQty, syncPlacementsFromCatalog,
 } from './store.js';
 import { SceneManager } from './scene.js';
 import { Interaction } from './interaction.js';
@@ -661,7 +661,12 @@ function catalogHandlers() {
       const item = catalogItem(catId);
       itemForm(item, (out) => {
         validateProjectData({ ...state.project, catalog: state.project.catalog.map((c) => c.id === catId ? out : c) });
-        Object.assign(item, out); markDirty(); renderAll();
+        Object.assign(item, out);
+        // Placements (and staged entries) hold denormalized copies of the
+        // item's weight/name/etc.; without this sync the stats panel would
+        // keep reporting the pre-edit values after a catalog edit.
+        syncPlacementsFromCatalog(state.project, item);
+        markDirty(); renderAll();
       });
     },
     remove: (catId) => {

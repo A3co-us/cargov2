@@ -33,3 +33,29 @@ test('incompatible cargo cannot share a container across different layers', () =
   assert.equal(result.placements.some((p, i) => result.placements.slice(i + 1)
     .some((q) => hazmatIncompatible(p.hazmatClass, q.hazmatClass))), false);
 });
+test('catalog edits propagate to placed and staged copies (stats follow the new weight)', async () => {
+  const { syncPlacementsFromCatalog } = await import('../public/js/store.js');
+  const { scenarioStats } = await import('../public/js/stats.js');
+  const item = makeCatalogItem({ name: 'Crate', length: 2, width: 2, height: 2, weight: 100 });
+  const placement = (id) => ({
+    id, catalogItemId: item.id, name: item.name, category: item.category,
+    hazmatClass: item.hazmatClass, weight: item.weight, color: '#fff',
+    x: 0, y: 0, z: 0, dims: { l: 2, w: 2, h: 2 }, rot: { rot: 0, tipped: false }, layer: 0,
+  });
+  const project = {
+    catalog: [item], staging: [placement('staged')],
+    scenarios: [{ id: 's1', name: 'C', containerType: '20STD', placements: [placement('p1'), placement('p2')] }],
+  };
+  assert.equal(scenarioStats(project.scenarios[0]).totalWeight, 200);
+
+  // User edits the catalog item's weight (and name) in the Item Catalog.
+  Object.assign(item, makeCatalogItem({ ...item, name: 'Crate XL', weight: 250 }));
+  const updated = syncPlacementsFromCatalog(project, item);
+  assert.equal(updated, 3); // two placements + one staged entry
+  assert.equal(scenarioStats(project.scenarios[0]).totalWeight, 500);
+  assert.equal(project.scenarios[0].placements[0].name, 'Crate XL');
+  assert.equal(project.staging[0].weight, 250);
+  // Placements of other catalog items are untouched.
+  const other = { ...project, staging: [], scenarios: [{ id: 's2', containerType: '20STD', placements: [{ ...placement('p3'), catalogItemId: 'other' }] }] };
+  assert.equal(syncPlacementsFromCatalog(other, item), 0);
+});

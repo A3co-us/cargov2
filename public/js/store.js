@@ -1,5 +1,5 @@
 // Central application state. Controllers explicitly refresh affected views.
-import { uid, DEFAULT_MAX_OVERHANG_PCT } from './cargo.js';
+import { uid, DEFAULT_MAX_OVERHANG_PCT, itemColor } from './cargo.js';
 
 export const state = {
   user: null,
@@ -137,6 +137,38 @@ export function remainingQty(catalogItemId) {
   if (!item) return 0;
   const total = Math.max(0, Math.floor(item.qtyAvailable || 0));
   return Math.max(0, total - placedQty(catalogItemId));
+}
+
+/**
+ * Propagate a catalog item edit to every placement (and staged entry) that was
+ * derived from it. Placements store denormalized copies of the item's
+ * non-geometric attributes (name, category, hazmat class, weight, color), so
+ * without this sync the stats panel would keep reporting the pre-edit weights.
+ *
+ * Dimensions are deliberately NOT synced: each placement's size/orientation
+ * was validated where it sits, and per-placement dims overrides (the
+ * edit-placement form) are a supported feature. Returns the number of
+ * placements/staged entries updated.
+ */
+export function syncPlacementsFromCatalog(project, item) {
+  if (!project || !item) return 0;
+  let updated = 0;
+  const apply = (p) => {
+    if (!p || p.catalogItemId !== item.id) return;
+    p.name = item.name;
+    p.category = item.category;
+    p.hazmatClass = item.hazmatClass;
+    p.weight = item.weight;
+    p.color = itemColor(item);
+    updated += 1;
+  };
+  for (const s of project.scenarios || []) {
+    for (const p of s.placements || []) apply(p);
+  }
+  // Staged entries are placement-shaped snapshots pulled back out of a
+  // container; they re-enter the shipment with these same fields.
+  for (const p of project.staging || []) apply(p);
+  return updated;
 }
 
 export function setProject(project) {
