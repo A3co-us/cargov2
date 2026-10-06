@@ -135,14 +135,15 @@ export function generateLoadPlan(scenario) {
 // Shared print chrome (masthead, meta grid, stat cards, print stylesheet)
 // ---------------------------------------------------------------------------
 
-/** Branded masthead: A3 logo lockup + document title/subtitle. */
-function masthead(docTitle, docSubtitle) {
+/** Branded masthead: A3 logo lockup + document title/subtitle.
+ * `opts.hideCompany` omits the company wordmark ("A3") above the product name. */
+function masthead(docTitle, docSubtitle, opts = {}) {
   return `<header class="rp-masthead">
     <div class="rp-brand">
       <img class="rp-logo" src="${BRAND.logo}" alt="${BRAND.company} logo"
            onerror="this.style.display='none'" />
       <div class="rp-brand-text">
-        <span class="rp-company">${escapeHtml(BRAND.company)}</span>
+        ${opts.hideCompany ? '' : `<span class="rp-company">${escapeHtml(BRAND.company)}</span>`}
         <span class="rp-product">${escapeHtml(BRAND.product)}</span>
         <span class="rp-tagline">${escapeHtml(BRAND.tagline)}</span>
       </div>
@@ -156,8 +157,10 @@ function masthead(docTitle, docSubtitle) {
 
 /** A definition-style metadata grid. `entries` is an array of [label, value]. */
 function metaGrid(entries) {
+  // Intentionally empty labels/values are kept (rendered as blank cells) so the
+  // 3-column layout stays aligned; null/undefined still drop the cell.
   const cells = entries
-    .filter(([, v]) => v != null && v !== '')
+    .filter(([, v]) => v != null)
     .map(
       ([label, value]) => `<div class="rp-meta-cell">
         <span class="rp-meta-label">${escapeHtml(label)}</span>
@@ -260,8 +263,8 @@ function printStyles() {
   .rp-meta-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--rp-muted); font-weight: 700; }
   .rp-meta-value { font-size: 12.5px; font-weight: 600; color: var(--rp-ink); }
 
-  /* Summary cards */
-  .rp-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
+  /* Summary cards: auto-fit so 3 or 4 cards each fill the row evenly. */
+  .rp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0; }
   .rp-card {
     border: 1px solid var(--rp-border); border-top: 3px solid var(--rp-accent);
     border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px;
@@ -391,13 +394,9 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
 
   const dims = `${fmtFeet(spec.length)} L × ${fmtFeet(spec.width)} W × ${fmtFeet(spec.height)} H`;
 
+  // Manifest summary: Items / Volume Used / Hazmat Items (no Total Weight card).
   const cards = statCards([
     { label: 'Items', value: st.itemCount },
-    {
-      label: 'Total Weight',
-      valueHtml: escapeHtml(fmtLb(st.totalWeight)),
-      note: `${fmtPct(st.weightPct)} of payload`,
-    },
     {
       label: 'Volume Used',
       valueHtml: escapeHtml(fmtPct(st.volumePct)),
@@ -449,15 +448,23 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
       </table>`
     : '<div class="rp-empty">No items placed in this container loading.</div>';
 
-  return `${masthead('Packing Manifest', `${BRAND.product} · ${BRAND.tagline}`)}
+  // Meta grid: 4 rows × 3 columns (gross weights derived from tare + payload).
+  const cubicFeet = spec.length * spec.width * spec.height;
+
+  return `${masthead('Packing Manifest', null, { hideCompany: true })}
     ${metaGrid([
       ['Project', project?.name || '—'],
       ['Container Loading', scenario.name],
+      ['Prepared By', user?.username || '—'],
       ['Container', spec.name],
       ['Internal Dimensions', dims],
-      ['Clear Door Opening', openingsSummary(spec)],
+      ['Cubic Feet Total', fmtFt3(cubicFeet)],
+      ['Tare', fmtLb(spec.tareLb)],
       ['Payload Limit', fmtLb(spec.payloadLb)],
-      ['Prepared By', user?.username || '—'],
+      ['Payload', fmtLb(st.totalWeight)],
+      ['', ''],
+      ['Max Gross', fmtLb(spec.tareLb + spec.payloadLb)],
+      ['Gross', fmtLb(spec.tareLb + st.totalWeight)],
     ])}
     ${cards}
     ${viewImage ? `<h2 class="rp-section-title">Container View</h2>
