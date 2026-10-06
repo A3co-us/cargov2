@@ -356,6 +356,20 @@ function printStyles() {
     border-top: 1px solid var(--rp-border); background: #fff;
   }
 
+  /* Packing Manifest only: page 1 must hold the masthead + meta grid + cards +
+     the container view, so the frontmatter is compacted ("the window") while
+     the single view figure is enlarged — keeping the post-view page break
+     meaningful instead of stranding a near-empty page. */
+  .rp-manifest .rp-masthead { padding-bottom: 12px; }
+  .rp-manifest .rp-logo { height: 44px; }
+  .rp-manifest .rp-meta { margin: 12px 0; }
+  .rp-manifest .rp-meta-cell { padding: 6px 10px; }
+  .rp-manifest .rp-cards { margin: 12px 0; }
+  .rp-manifest .rp-card { padding: 8px 12px; }
+  .rp-manifest .rp-card-value { font-size: 17px; }
+  .rp-manifest .rp-section-title { margin: 14px 0 6px; }
+  .rp-manifest .rp-views-single .rp-figure img { max-height: 128mm; }
+
   @page { margin: 14mm 12mm 18mm; }
   @media print {
     body { padding: 0 0 48px; }
@@ -368,19 +382,20 @@ function printStyles() {
   }`;
 }
 
-/** Assemble a full, self-contained branded HTML document for a report body. */
-export function reportDocument(docTitle, bodyHtml) {
+/** Assemble a full, self-contained branded HTML document for a report body.
+ *  `opts.bodyClass` adds a class to <body> for report-specific print styling. */
+export function reportDocument(docTitle, bodyHtml, opts = {}) {
   return `<!doctype html><html><head><meta charset="utf-8" />
      <title>${escapeHtml(BRAND.company)} ${escapeHtml(BRAND.product)} — ${escapeHtml(docTitle)}</title>
      <style>${printStyles()}</style></head>
-     <body><div id="print-area">${bodyHtml}</div>${reportFooter()}</body></html>`;
+     <body class="${opts.bodyClass || ''}"><div id="print-area">${bodyHtml}</div>${reportFooter()}</body></html>`;
 }
 
 /** Open a new window with the branded print chrome and trigger the dialog. */
-function openPrintWindow(docTitle, bodyHtml) {
+function openPrintWindow(docTitle, bodyHtml, opts = {}) {
   const win = window.open('', '_blank');
   if (!win) return;
-  win.document.write(reportDocument(docTitle, bodyHtml));
+  win.document.write(reportDocument(docTitle, bodyHtml, opts));
   win.document.close();
   win.focus();
   // Give the logo/layout a beat to settle before invoking print.
@@ -502,7 +517,9 @@ function balanceSummary(balance) {
 }
 
 export function printManifest(project, scenario, user, viewImage, viewKey = 'iso') {
-  openPrintWindow('Packing Manifest', manifestHTML(project, scenario, user, viewImage, viewKey));
+  openPrintWindow('Packing Manifest', manifestHTML(project, scenario, user, viewImage, viewKey), {
+    bodyClass: 'rp-manifest',
+  });
 }
 
 
