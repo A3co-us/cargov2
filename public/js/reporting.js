@@ -237,7 +237,7 @@ function printStyles() {
   html, body { margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    color: var(--rp-ink); background: #fff; font-size: 12.5px; line-height: 1.5;
+    color: var(--rp-ink); background: #fff; font-size: 11.5px; line-height: 1.5;
     padding: 28px 32px 64px;
   }
   .rp-doc-title, h1, h2, h3 { margin: 0; }
@@ -250,12 +250,12 @@ function printStyles() {
   .rp-brand { display: flex; align-items: center; gap: 14px; }
   .rp-logo { height: 52px; width: auto; object-fit: contain; }
   .rp-brand-text { display: flex; flex-direction: column; line-height: 1.15; }
-  .rp-company { font-size: 20px; font-weight: 800; letter-spacing: 0.02em; color: var(--rp-ink); }
-  .rp-product { font-size: 13px; font-weight: 700; color: var(--rp-accent); text-transform: uppercase; letter-spacing: 0.08em; }
-  .rp-tagline { font-size: 10.5px; color: var(--rp-muted); text-transform: uppercase; letter-spacing: 0.12em; }
+  .rp-company { font-size: 19px; font-weight: 800; letter-spacing: 0.02em; color: var(--rp-ink); }
+  .rp-product { font-size: 12px; font-weight: 700; color: var(--rp-accent); text-transform: uppercase; letter-spacing: 0.08em; }
+  .rp-tagline { font-size: 9.5px; color: var(--rp-muted); text-transform: uppercase; letter-spacing: 0.12em; }
   .rp-doc { text-align: right; }
-  .rp-doc-title { font-size: 22px; font-weight: 800; color: var(--rp-ink); }
-  .rp-doc-sub { margin: 2px 0 0; font-size: 12px; color: var(--rp-muted); }
+  .rp-doc-title { font-size: 21px; font-weight: 800; color: var(--rp-ink); }
+  .rp-doc-sub { margin: 2px 0 0; font-size: 11px; color: var(--rp-muted); }
 
   /* Meta grid */
   .rp-meta {
@@ -264,8 +264,8 @@ function printStyles() {
     border: 1px solid var(--rp-border); border-radius: 8px; overflow: hidden;
   }
   .rp-meta-cell { background: #fff; padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; }
-  .rp-meta-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--rp-muted); font-weight: 700; }
-  .rp-meta-value { font-size: 12.5px; font-weight: 600; color: var(--rp-ink); }
+  .rp-meta-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--rp-muted); font-weight: 700; }
+  .rp-meta-value { font-size: 11.5px; font-weight: 600; color: var(--rp-ink); }
 
   /* Summary cards: auto-fit so 3 or 4 cards each fill the row evenly. */
   .rp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0; }
@@ -274,16 +274,16 @@ function printStyles() {
     border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px;
     background: #fff;
   }
-  .rp-card-value { font-size: 20px; font-weight: 800; color: var(--rp-ink); }
-  .rp-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--rp-muted); font-weight: 700; }
-  .rp-card-note { font-size: 10.5px; color: var(--rp-muted); }
+  .rp-card-value { font-size: 19px; font-weight: 800; color: var(--rp-ink); }
+  .rp-card-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--rp-muted); font-weight: 700; }
+  .rp-card-note { font-size: 9.5px; color: var(--rp-muted); }
   .rp-card.ok { border-top-color: var(--rp-ok); }
   .rp-card.warn { border-top-color: var(--rp-warn); }
   .rp-card.danger { border-top-color: var(--rp-danger); }
 
   /* Section heading */
   .rp-section-title {
-    font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+    font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--rp-accent); margin: 22px 0 8px; padding-bottom: 4px;
     border-bottom: 1px solid var(--rp-border);
   }
@@ -305,15 +305,15 @@ function printStyles() {
   }
   .rp-figure img { display: block; width: 100%; height: auto; background: #f6f8fd; }
   .rp-figure figcaption {
-    padding: 6px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    padding: 6px 10px; font-size: 9px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.06em; color: var(--rp-muted); border-top: 1px solid var(--rp-border);
   }
 
   /* Tables */
-  .rp-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .rp-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
   .rp-table thead th {
     background: var(--rp-accent); color: #fff; text-align: left; font-weight: 700;
-    padding: 8px 10px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 8px 10px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em;
   }
   .rp-table tbody td { padding: 7px 10px; border-bottom: 1px solid var(--rp-border); vertical-align: top; }
   .rp-table tbody tr:nth-child(even) td { background: #f6f8fd; }
@@ -329,11 +329,11 @@ function printStyles() {
   .rp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; align-items: center; }
   .rp-chip {
     display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
-    border: 1px solid var(--rp-border); border-radius: 999px; background: #fff; font-size: 11px;
+    border: 1px solid var(--rp-border); border-radius: 999px; background: #fff; font-size: 10px;
   }
   .rp-chip b { color: var(--rp-accent); }
   .rp-pill {
-    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px;
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 9px;
     font-weight: 700; background: var(--rp-accent-soft); color: var(--rp-accent);
     text-transform: uppercase; letter-spacing: 0.03em;
   }
@@ -342,7 +342,7 @@ function printStyles() {
   .rp-pill.danger { background: #fbe3e7; color: var(--rp-danger); }
   .rp-pill.muted { background: #eef1f6; color: var(--rp-muted); }
 
-  .rp-note { font-size: 11.5px; color: var(--rp-muted); margin: 6px 0; }
+  .rp-note { font-size: 10.5px; color: var(--rp-muted); margin: 6px 0; }
 
   /* A heading must never be stranded at the bottom of a page without its
      content — keep it glued to the next block. */
@@ -352,7 +352,7 @@ function printStyles() {
   .rp-footer {
     position: fixed; bottom: 0; left: 0; right: 0;
     display: flex; justify-content: space-between;
-    padding: 8px 32px; font-size: 9.5px; color: var(--rp-muted);
+    padding: 8px 32px; font-size: 8.5px; color: var(--rp-muted);
     border-top: 1px solid var(--rp-border); background: #fff;
   }
 
@@ -366,7 +366,7 @@ function printStyles() {
   .rp-manifest .rp-meta-cell { padding: 6px 10px; }
   .rp-manifest .rp-cards { margin: 12px 0; }
   .rp-manifest .rp-card { padding: 8px 12px; }
-  .rp-manifest .rp-card-value { font-size: 17px; }
+  .rp-manifest .rp-card-value { font-size: 16px; }
   .rp-manifest .rp-section-title { margin: 14px 0 6px; }
   .rp-manifest .rp-views-single .rp-figure img { max-height: 128mm; }
 
