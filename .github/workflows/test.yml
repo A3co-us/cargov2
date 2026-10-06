@@ -12,3 +12,16 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Coverage report and regression gate
+        run: |
+          # Print the per-file report and fail if total line coverage drops
+          # below the baseline (currently ~76%).
+          node --test --experimental-test-coverage test/*.test.js 2>&1 | tee coverage.txt
+          # "76.53" with the dot stripped becomes 7653, so the gate is x100.
+          total=$(awk '/all files/ {print $5}' coverage.txt | tr -d '.')
+          echo "Total line coverage: ${total:-0}%"
+          if ! [ "${total:-0}" -ge 7000 ] 2>/dev/null; then
+            echo "::error::Total coverage dropped below 70%"
+            exit 1
+          fi
+          rm -f coverage.txt

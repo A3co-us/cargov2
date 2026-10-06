@@ -10,10 +10,12 @@ const { default: db } = await import('../server/db.js');
 const { signToken } = await import('../server/auth.js');
 const { default: users } = await import('../server/routes/users.routes.js');
 const { default: projects } = await import('../server/routes/projects.routes.js');
+const { default: auth } = await import('../server/routes/auth.routes.js');
 const app = express();
 app.use(express.json());
 app.use('/users', users);
 app.use('/projects', projects);
+app.use('/api', auth);
 app.use((err, _req, res, _next) => res.status(err.status || 500).json({ error: err.message }));
 const server = app.listen(0, '127.0.0.1');
 await new Promise((resolve) => server.once('listening', resolve));
@@ -24,8 +26,10 @@ after(async () => {
 const admin = db.prepare('SELECT * FROM users LIMIT 1').get();
 const adminToken = signToken(admin);
 async function request(method, path, body, token = adminToken) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token !== null) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
-    method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    method, headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
@@ -103,4 +107,68 @@ test('malformed project data receives validation errors without changing data', 
   const response = await request('POST', '/projects', { name: 'Malformed', data: { catalog: [], scenarios: [null] } });
   assert.equal(response.status, 400);
   assert.equal(db.prepare('SELECT 1 FROM projects WHERE name = ?').get('Malformed'), undefined);
+});
+
+test('login rejects missing fields and bad credentials, and accepts valid ones', async () => {
+  assert.equal((await request('POST', '/api/login', { username: 'admin' }, null)).status, 400);
+  assert.equal((await request('POST', '/api/login', { username: 'admin', password: 'wrong-password' }, null)).status, 401);
+  assert.equal((await request('POST', '/api/login', { username: 'no-such-user', password: 'x' }, null)).status, 401);
+  const ok = await request('POST', '/api/login', { username: 'admin', password: 'test-admin-password' }, null);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.user.role, 'admin');
+  assert.ok(ok.body.token);
+});
+
+test('/api/me identifies the current user and rejects anonymous requests', async () => {
+  const me = await request('GET', '/api/me', undefined);
+  assert.equal(me.status, 200);
+  assert.equal(me.body.user.username, 'admin');
+  assert.equal((await request('GET', '/api/me', undefined, null)).status, 401);
+});
+
+test('forged JWTs (wrong secret or alg=none) are rejected', async () => {
+  const jwt = (await import('jsonwebtoken')).default;
+  const wrongSecret = jwt.sign({ id: admin.id, tokenVersion: 0 }, 'not-the-isolated-test-signing-key');
+  assert.equal((await request('GET', '/users', undefined, wrongSecret)).status, 401);
+  const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+  const unsigned = `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url({ id: admin.id, tokenVersion: 0 })}.`;
+  assert.equal((await request('GET', '/users', undefined, unsigned)).status, 401);
+  assert.equal((await request('GET', '/users', undefined, 'not-a-token')).status, 401);
+});
+
+test('the last admin cannot be demoted and self-deletion is refused', async () => {
+  // Make the seeded admin the only admin so the guard can trigger.
+  const otherAdmins = db.prepare("SELECT id FROM users WHERE role = 'admin' AND id != ?").all(admin.id);
+  const restore = () => {
+    if (!otherAdmins.length) return;
+    db.prepare("UPDATE users SET role = 'admin' WHERE id IN (" +
+      otherAdmins.map(() => '?').join(',') + ')').run(...otherAdmins.map((u) => u.id));
+  };
+  if (otherAdmins.length) {
+    db.prepare("UPDATE users SET role = 'viewer' WHERE id IN (" +
+      otherAdmins.map(() => '?').join(',') + ')').run(...otherAdmins.map((u) => u.id));
+  }
+  try {
+    const demote = await request('PUT', `/users/${admin.id}`, { role: 'viewer' });
+    assert.equal(demote.status, 400);
+    assert.match(demote.body.error, /last admin/);
+    assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(admin.id).role, 'admin');
+    // Deleting your own account is refused first, even as the last admin.
+    const selfDelete = await request('DELETE', `/users/${admin.id}`);
+    assert.equal(selfDelete.status, 400);
+    assert.match(selfDelete.body.error, /own account/);
+    assert.ok(db.prepare('SELECT 1 FROM users WHERE id = ?').get(admin.id));
+  } finally {
+    restore();
+  }
+});
+
+test('users cannot be created with duplicate usernames and roles are validated', async () => {
+  assert.equal((await request('POST', '/users', { username: 'admin', password: 'x' })).status, 409);
+  assert.equal((await request('POST', '/users', { username: 'badrole', password: 'x', role: 'superuser' })).status, 201);
+  assert.equal((await request('POST', '/users', { username: 'nopass' })).status, 400);
+  const saved = db.prepare("SELECT role FROM users WHERE username = 'badrole'").get();
+  assert.equal(saved.role, 'viewer'); // unknown roles fall back to viewer
+  assert.equal((await request('PUT', '/users/999999', { role: 'viewer' })).status, 404);
+  assert.equal((await request('DELETE', '/users/999999')).status, 404);
 });

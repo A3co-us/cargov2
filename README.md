@@ -186,12 +186,14 @@ the database is empty and `ADMIN_PASSWORD` is not provided.
 ## Validation, tests and upgrade notes
 
 ```bash
-npm run check   # Syntax-check all application, script and test JavaScript
-npm test        # Domain, geometry, persistence, worker, API, migration and backup tests
+npm run check          # Syntax-check all application, script and test JavaScript
+npm test               # Domain, geometry, persistence, worker, API, migration and backup tests
+npm run test:coverage  # Same tests with Node's built-in coverage report
 ```
 
 Tests use temporary or in-memory databases; they do not access the local app
-database. CI runs these checks on Node 22. Geometry tests use renderer doubles,
+database. CI runs these checks on Node 22, prints a coverage report and fails
+if total line coverage drops below 70%. Geometry tests use renderer doubles,
 so a real-browser/WebGL smoke test is still recommended before deployment.
 
 - Existing databases receive additive `users.token_version` and
