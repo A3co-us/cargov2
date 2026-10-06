@@ -362,7 +362,10 @@ export function manifestModal(project, scenario, user, capture, initialView = 'i
     const doc = preview.contentDocument;
     if (!doc) return;
     doc.open();
-    doc.write(reportDocument('Packing Manifest', manifestHTML(project, scenario, user, image, viewKey)));
+    doc.write(reportDocument('Packing Manifest', manifestHTML(project, scenario, user, image, viewKey), {
+      // Match the print window's manifest styling so the preview is WYSIWYG.
+      bodyClass: 'rp-manifest',
+    }));
     doc.close();
   };
   preview.addEventListener('load', load);
