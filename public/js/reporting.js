@@ -479,7 +479,8 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
       </table>`
     : '<div class="rp-empty">No items placed in this container loading.</div>';
 
-  // Meta grid: 4 rows × 3 columns (gross weights derived from tare + payload).
+  // Meta grid: 4 rows × 3 columns (gross values derived from tare + payload;
+  // row 3 shows limits, row 4 shows actual payload/gross).
   const cubicFeet = spec.length * spec.width * spec.height;
 
   return `${masthead('Packing Manifest', null, { hideCompany: true })}
@@ -492,9 +493,9 @@ export function manifestHTML(project, scenario, user, viewImage, viewKey = 'iso'
       ['Cubic Feet Total', fmtFt3(cubicFeet)],
       ['Tare', fmtLb(spec.tareLb)],
       ['Payload Limit', fmtLb(spec.payloadLb)],
-      ['Payload', fmtLb(st.totalWeight)],
-      ['', ''],
       ['Max Gross', fmtLb(spec.tareLb + spec.payloadLb)],
+      ['', ''],
+      ['Payload', fmtLb(st.totalWeight)],
       ['Gross', fmtLb(spec.tareLb + st.totalWeight)],
     ])}
     ${cards}
