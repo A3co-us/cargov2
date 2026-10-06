@@ -166,7 +166,7 @@ function metaGrid(entries) {
   const cells = entries
     .filter(([, v]) => v != null)
     .map(
-      ([label, value]) => `<div class="rp-meta-cell">
+      ([label, value]) => `<div class="rp-meta-cell${!label && !value ? ' rp-meta-cell-empty' : ''}">
         <span class="rp-meta-label">${escapeHtml(label)}</span>
         <span class="rp-meta-value">${escapeHtml(String(value))}</span>
       </div>`
@@ -266,6 +266,18 @@ function printStyles() {
   .rp-meta-cell { background: #fff; padding: 9px 12px; display: flex; flex-direction: column; gap: 2px; }
   .rp-meta-label { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--rp-muted); font-weight: 700; }
   .rp-meta-value { font-size: 11.5px; font-weight: 600; color: var(--rp-ink); }
+  /* The meta cell dividers rely on background fills, which browsers strip
+     when printing unless told to keep them — force exact colors. */
+  .rp-meta { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Manifest: light but visible borders around every meta cell; the skipped
+     filler cell (the blank one below Tare) is lightly grayed out. */
+  .rp-manifest .rp-meta { gap: 0; background: #fff; }
+  .rp-manifest .rp-meta-cell {
+    border: 1px solid var(--rp-border);
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .rp-manifest .rp-meta-cell-empty { background: #eff2f8; }
 
   /* Summary cards: auto-fit so 3 or 4 cards each fill the row evenly. */
   .rp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0; }
