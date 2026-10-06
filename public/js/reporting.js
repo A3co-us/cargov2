@@ -102,11 +102,15 @@ export function placementText(p, placements) {
  * Generate step-by-step loading instructions from a container loading.
  */
 export function generateLoadPlan(scenario) {
-  // Order: bottom layers first, then front-to-back, left-to-right.
+  // Order: farthest from the doors first (x asc — front wall is x=0, doors at
+  // x=length), then each stack bottom-to-top (y asc) so items load right after
+  // what supports them, then left-to-right (z asc) as a tie-break within the
+  // same depth. This walks the loader from the nose to the doors once instead
+  // of layer-by-layer round trips.
   const ordered = [...scenario.placements].sort((a, b) => {
+    if (Math.abs(a.x - b.x) > 1e-6) return a.x - b.x;
     if (Math.abs(a.y - b.y) > 1e-6) return a.y - b.y;
-    if (Math.abs(a.z - b.z) > 1e-6) return a.z - b.z;
-    return a.x - b.x;
+    return a.z - b.z;
   });
   return ordered.map((p, i) => {
     const stacked = p.y > 1e-6;
@@ -553,7 +557,7 @@ export function loadPlanHTML(scenario, project, user, views) {
     ${cards}
     ${viewsFigure(views) ? `<h2 class="rp-section-title">Container Views</h2>
     ${viewsFigure(views)}` : ''}
-    <p class="rp-note">Load in the sequence shown: bottom layers first, then front-to-back, left-to-right.</p>
+    <p class="rp-note">Load in the sequence shown: start at the point furthest from the doors, stack each position fully, then work back toward the doors.</p>
     <h2 class="rp-section-title">Loading Sequence</h2>
     ${table}`;
 }
